@@ -4,19 +4,21 @@ import numpy as np
 import cv2
 import random
 import os
+import pylab as pl
 
 height = 30
-width = 90
+width = 60
 num_moves = 6
-num_obs = 4
-learning_rate = 0.001
-game_name = 'SpaceInvadersDeterministic-v0' # 'SuperMarioBros-1-1-v0'
+num_obs = 3
+learning_rate = 0.01
+# CartPole-v0, Berzerk-v0, SpaceInvadersDeterministic-v0
+game_name = 'SpaceInvadersDeterministic-v0'
 model_fn = '/checkpoint/'+game_name+'/'+game_name+'.ckpt'
 
 def cnn(X,act):
     X = tf.reshape(X,shape=[-1, height, width, 1])
-    c1 = tf.layers.conv2d(X, 8, (5,5),activation=tf.nn.relu)
-    c2 = tf.layers.conv2d(c1, 16, (3,3), activation=tf.nn.relu)
+    c1 = tf.layers.conv2d(X, 16, (5,5),activation=tf.nn.relu)
+    c2 = tf.layers.conv2d(c1, 32, (3,3), activation=tf.nn.relu)
     fc = tf.contrib.layers.flatten(c2)
     fc = tf.concat([fc,act],1)  #
     fc = tf.layers.dense(fc,50,activation=tf.nn.relu)
@@ -35,6 +37,7 @@ train = tf.train.AdamOptimizer(learning_rate=learning_rate).minimize(loss)
 def norm(obs):
     if len(obs.shape) == 3:
         obs = cv2.cvtColor(obs, cv2.COLOR_RGB2GRAY)
+        _,obs = cv2.threshold(obs,127,255,cv2.THRESH_BINARY)
     obs = cv2.resize(obs,(width,height)) #
     #plt_(obs)
     return obs/255.0
@@ -49,19 +52,24 @@ def get_state(env,a):
         done = done or v
     r = np.sum(r)
     if done:
-        r = -300.0
+        r = -600.0
     s = state[0]
     for i in range(1,len(state)):
         s = np.add(s,state[i])
     s = norm(s)
-    return s,r,done
+    return s,r/500.0,done
+
+def plot_(img):
+    pl.imshow(img,cmap=pl.cm.binary)
+    pl.pause(.001)
+    pl.draw()
 
 def norm_p(v):
     m = np.min(v)
-    v = [v_+m for v_ in v]
-    v = v/(np.sum(v))
+    norm = [a-m for a in v]
+    return norm/np.sum(norm)
 
-env = gym.make(game_name)    # CartPole-v0, Berzerk-v0, SpaceInvadersDeterministic-v0
+env = gym.make(game_name)
 jList = []
 rList = []
 y = 0.99
@@ -73,7 +81,7 @@ with tf.Session() as sess:
         saver.restore(sess,model_fn)
     else:
         sess.run(tf.global_variables_initializer())
-    for t in range(200):
+    for t in range(5000):
         done = False
         obs = env.reset()
         state, r, done = get_state(env,0)
@@ -81,10 +89,10 @@ with tf.Session() as sess:
             env.render()
             allQ = sess.run([out_],feed_dict={X:[state for i in range(num_moves)],act:np.identity(num_moves)}) #
             allQ = np.transpose(allQ[0])[0]
-            #a = np.argmax(allQ) #
-            a = np.random.choice(range(num_moves),1,p=norm_p(allQ))[0]
-            #if np.random.rand(1) < e:
-            #    a = env.action_space.sample()
+            a = np.argmax(allQ)
+            #a = np.random.choice(range(num_moves),1,p=normQ)[0]
+            if np.random.rand(1) < e:
+                a = env.action_space.sample()
             state1,r,done = get_state(env,a)
             print(a,r,allQ[a])
             maxQ = sess.run([out_],feed_dict={X:[state1 for i in range(num_moves)],act:np.identity(num_moves)})
