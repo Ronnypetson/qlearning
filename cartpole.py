@@ -10,7 +10,7 @@ height = 21
 width = 16
 num_moves = 6
 num_obs = 2
-learning_rate = 0.01
+learning_rate = 0.001
 # CartPole-v0, Berzerk-v0, SpaceInvadersDeterministic-v0
 game_name = 'Pong-v0'
 model_fn = '/checkpoint/'+game_name+'/'+game_name+'.ckpt'
@@ -42,23 +42,27 @@ def norm(obs):
     #plot_(obs)
     return obs/255.0
 
-def get_state(env,a):
-    res = [env.step(a) for i in range(num_obs)]
-    state = [s[0] for s in res]
-    r = [s[1] for s in res]
-    d = [s[2] for s in res]
-    done = False
-    for v in d:
-        done = done or v
-    r = np.sum(r)
+def get_state(env,prev,a):
+    res = [p for p in prev]
+    res[-1] = np.array(env.step(a))[:-1]
+    res[-1][0] = norm(res[-1][0])
+    #state = [s[0] for s in res]
+    #r = [s[1] for s in res]
+    #d = [s[2] for s in res]
+    #state[-1] = norm(state[-1])
+    #done = False
+    #for v in d:
+    #    done = done or v
+    #r = np.sum(r)
+    #if r < 0:
+    #    r *= 50.0
     #if done:
     #    r = -50.0
     #s = state[0]
     #for i in range(1,len(state)):
     #    s = np.add(s,state[i])
     #s /= len(state)
-    state = [norm(ob) for ob in state]
-    return state,r,done
+    return res
 
 def plot_(img):
     pl.imshow(img) # ,cmap=pl.cm.binary
@@ -69,6 +73,18 @@ def norm_p(v):
     m = np.min(v)
     norm = [a-m for a in v]
     return norm/np.sum(norm)
+
+def ousoria(d):
+    done = False
+    for a in d:
+        done = done or a
+    return done
+
+def unpack_st(st):
+    state = [s[0] for s in st]
+    r = [s[1] for s in st]
+    d = [s[2] for s in st]
+    return state,r,d
 
 env = gym.make(game_name)
 jList = []
@@ -85,26 +101,33 @@ with tf.Session() as sess:
     for t in range(5000):
         done = False
         obs = env.reset()
-        state, r, done = get_state(env,0)
+        prev = [np.array(env.step(0))[:-1] for i in range(num_obs)]
+        for p in prev:
+            p[0] = norm(p[0])
+        st = get_state(env,prev,0)
+        state,r,d = unpack_st(st)
         for j in range(200000):
-            if j%10:
-                env.render()
+            env.render()
             #if j%10:
             #    plot_(state)
             allQ = sess.run([out_],feed_dict={X:[state for i in range(num_moves)],act:np.identity(num_moves)}) #
             allQ = np.transpose(allQ[0])[0]
             a = np.argmax(allQ)
-            if np.random.rand(1) < e:
+            if np.random.rand(1) < e or a == 0:
                 a = env.action_space.sample()
-            state1,r,done = get_state(env,a)
-            print(a,r,allQ[a])
+            new_st = get_state(env,prev,a)
+            state1,r,d = unpack_st(new_st)
+            total_r = np.sum(r)
+            done = ousoria(d)
+            print(a,total_r,allQ[a])
             maxQ = sess.run([out_],feed_dict={X:[state1 for i in range(num_moves)],act:np.identity(num_moves)})
             maxQ = np.max(maxQ)
-            y = (1.0-alpha)*allQ[a] + alpha*(r+y*maxQ)
+            y = (1.0-alpha)*allQ[a] + alpha*(total_r+y*maxQ)
             if done:
-                y = r
+                y = total_r
             sess.run(train,feed_dict={X:[state1],act:[np.identity(num_moves)[a]],Y:[y]})
             state = state1
+            prev = new_st
             if done:
                 break
             if j%100 == 99:
