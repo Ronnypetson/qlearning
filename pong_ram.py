@@ -10,7 +10,7 @@ height = 128 # 21
 width = 1 # 16
 num_moves = 6
 num_obs = 4
-move_strength = [0.25, 0.334, 0.5, 1.0]
+move_strength = [0.25, 0.5, 0.75, 1.0]
 learning_rate = 0.01
 # CartPole-v0, Berzerk-v0, SpaceInvadersDeterministic-v0
 game_name = 'Pong-ram-v0'
@@ -38,7 +38,6 @@ loss = tf.losses.mean_squared_error(out_,Y)
 train = tf.train.AdamOptimizer(learning_rate=learning_rate).minimize(loss)
 
 def get_state(env,prev,a,rep):
-    print(rep)
     rep = int(rep)
     res = [p for p in prev]
     last = [np.array(env.step(a))[:-1] for i in range(rep)]
@@ -103,9 +102,12 @@ with tf.Session() as sess:
             env.render()
             allQ = sess.run([out_],feed_dict={X:[state for i in range(num_moves*lms)],act:act_}) #
             allQ = np.transpose(allQ[0])[0]
-            a = np.argmax(allQ)/lms
-            rep = np.argmax(allQ)%lms
-            #a = np.random.choice(range(num_moves),1,p=norm_p(allQ))[0]
+            #a = np.argmax(allQ)/lms
+            #rep = np.argmax(allQ)%lms
+            #a = np.random.choice(range(lms*num_moves),1,p=norm_p(allQ))[0]
+            mov = np.random.choice(np.flatnonzero(allQ == allQ.max()))
+            a = mov/lms
+            rep = mov%lms
             if np.random.rand(1) < e: #  or a == 0 np.random.rand(1) < e
                 a = env.action_space.sample()
                 rep = np.random.choice(range(lms))
@@ -123,7 +125,7 @@ with tf.Session() as sess:
             y = (1.0-alpha)*allQ[a] + alpha*(total_r+y*maxQ)
             if done:
                 y = total_r
-            sess.run(train,feed_dict={X:[state1],act:[act_[a]],Y:[y]})
+            sess.run(train,feed_dict={X:[state1],act:[act_[a*lms+rep]],Y:[y]})
             state = state1
             prev = new_st
             if done:
